@@ -1,0 +1,26 @@
+---
+driver_plugin: vagrant
+
+platforms:
+- name: ubuntu-12.04
+  driver_config:
+    provider: vmware_fusion
+    box: precise64
+    box_url: http://files.vagrantup.com/precise64_vmware.box
+    require_chef_omnibus: true
+
+suites:
+- name: default
+  run_list: ["recipe[basic-stats]"]
+  attributes:
+    basic-stats:
+      host: logs.example.net
+      port: 8678
+      interface: bg098
+      location: /tmp
+      cron:
+        minute: 9
+        hour: 8
+        day: 7
+        month: 6
+        weekday: 5

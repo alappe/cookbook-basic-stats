@@ -1,0 +1,104 @@
+#!/usr/bin/env zsh
+DIVIDER=1024
+NC=$(which nc)
+NC_PARAMETERS="-u -w 0"
+HOST=<%= @host %>
+PORT=<%= @port %>
+HOSTNAME=$(hostname -s)
+PREFIX="${HOSTNAME}.system"
+NET_PREFIX="${PREFIX}.network"
+DISK_PREFIX="${PREFIX}.disk"
+MEM_PREFIX="${PREFIX}.mem"
+SWAP_PREFIX="${PREFIX}.swap"
+LOAD_PREFIX="${PREFIX}.loadavg"
+PROC_PREFIX="${PREFIX}.processes"
+
+# BSD
+if $(uname -a | grep FreeBSD > /dev/null); then
+NETSTAT=$(/usr/bin/netstat -i -b -n -I bge0 | head -2 | tail -1)
+NET_BYTE_IN="${NET_PREFIX}.in:$(echo ${NETSTAT} | awk '{ print $8 }')|g"
+NET_BYTE_OUT="${NET_PREFIX}.out:$(echo ${NETSTAT} | awk '{ print $11 }')|g"
+NET_BYTE_COL="${NET_PREFIX}.collisions:$(echo ${NETSTAT} | awk '{ print $12 }')|g"
+NET_BYTE_IN_ERROR="${NET_PREFIX}.in-error:$(echo ${NETSTAT} | awk '{ print $6 }')|g"
+NET_BYTE_OUT_ERROR="$NET_PREFIX}.out-error:$(echo ${NETSTAT} | awk '{ print $9 }')|g"
+DISK_USED="${DISK_PREFIX}.used:$(df -h | grep /$ | awk '{ NUM = $3; if ( $3 ~ /M/ ) { gsub(/M/, "", NUM); NUM = NUM / 1024; } else { gsub(/G(i)?/, "", NUM); } printf("%.2f", NUM); }')|g"
+DISK_FREE="${DISK_PREFIX}.free:$(df -h | grep /$ | awk '{ NUM = $4; if ( $4 ~ /M/ ) { gsub(/M/, "", NUM); NUM = NUM / 1024; } else { gsub(/G(i)?/, "", NUM); } printf("%.2f", NUM); }')|g"
+# From https://github.com/creaktive/rainbarf/blob/master/rainbarf
+PROC=$(/usr/bin/top -b -d1 -I -s1 -z)
+MEM_TOTAL="${MEM_PREFIX}.total:$(echo ${PROC} | grep Mem | awk '{gsub(/M/, "", $6); printf("%.2f", $6);}')|g"
+MEM_FREE="${MEM_PREFIX}.free:$(echo ${PROC} | grep Mem | awk '{gsub(/M/, "", $12); printf("%.2f", $12);}')|g"
+SWAP_TOTAL="${SWAP_PREFIX}.total:$(echo ${PROC} | grep Swap | awk '{gsub(/M/, "", $2); printf("%.2f", $2);}')|g"
+SWAP_FREE="${SWAP_PREFIX}.free:$(echo ${PROC} | grep Swap | awk '{gsub(/M/, "", $6); printf("%.2f", $6);}')|g"
+LOADAVG=$(sysctl vm.loadavg)
+LOAD_ONE="${LOAD_PREFIX}.one:$(echo ${LOADAVG} | awk '{print $3}')|g"
+LOAD_FIVE="${LOAD_PREFIX}.five:$(echo ${LOADAVG} | awk '{print $4}')|g"
+LOAD_FIFTEEN="${LOAD_PREFIX}.fifteen:$(echo ${LOADAVG} | awk '{print $5}')|g"
+PROC_TOTAL="${PROC_PREFIX}.total:$(echo ${PROC} | grep process | awk '{print $1}')|g"
+PROC_RUN="${PROC_PREFIX}.running:$(echo ${PROC} | grep process | awk '{print $3}')|g"
+
+# Mac
+elif $(uname -a | grep Darwin > /dev/null); then
+NETSTAT=$(/usr/sbin/netstat -i -b -n -I en0 | head -2 | tail -1)
+NET_BYTE_IN="${NET_PREFIX}.in:$(echo ${NETSTAT} | awk '{ print $7 }')|g"
+NET_BYTE_OUT="${NET_PREFIX}.out:$(echo ${NETSTAT} | awk '{ print $10 }')|g"
+NET_BYTE_COL="${NET_PREFIX}.collisions:$(echo ${NETSTAT} | awk '{ print $11 }')|g"
+NET_BYTE_IN_ERROR="${NET_PREFIX}.in-error:$(echo ${NETSTAT} | awk '{ print $6 }')|g"
+NET_BYTE_OUT_ERROR="${NET_PREFIX}.out-error:$(echo ${NETSTAT} | awk '{ print $9 }')|g"
+DISK_USED="${DISK_PREFIX}.used:$(df -h | grep /$ | awk '{ NUM = $3; if ( $3 ~ /M/ ) { gsub(/M/, "", NUM); NUM = NUM / 1024; } else { gsub(/G(i)?/, "", NUM); } printf("%.2f", NUM); }')|g"
+DISK_FREE="${DISK_PREFIX}.free:$(df -h | grep /$ | awk '{ NUM = $4; if ( $4 ~ /M/ ) { gsub(/M/, "", NUM); NUM = NUM / 1024; } else { gsub(/G(i)?/, "", NUM); } printf("%.2f", NUM); }')|g"
+# From  https://github.com/creaktive/rainbarf/blob/master/rainbarf
+PROC=$(/usr/bin/top -R -F -l1 -n0 -s0)
+MEM_TOTAL="${MEM_PREFIX}.total:$(echo ${PROC} | grep PhysMem | awk '{gsub(/M/, "", $2); printf("%.2f", $2);}')|g"
+MEM_FREE="${MEM_PREFIX}.free:$(echo ${PROC} | grep PhysMem | awk '{gsub(/M/, "", $10); printf("%.2f", $10);}')|g"
+SWAP=$(sysctl vm.swapusage)
+SWAP_TOTAL="${SWAP_PREFIX}.total:$(echo ${SWAP} | awk '{ print $4 }' | sed 's/M//g')|g"
+SWAP_FREE="${SWAP_PREFIX}.free:$(echo ${SWAP} | awk '{ print $10 }' | sed 's/M//g')|g"
+LOADAVG=$(sysctl vm.loadavg)
+LOAD_ONE="${LOAD_PREFIX}.one:$(echo ${LOADAVG} | awk '{print $3}')|g"
+LOAD_FIVE="${LOAD_PREFIX}.five:$(echo ${LOADAVG} | awk '{print $4}')|g"
+LOAD_FIFTEEN="${LOAD_PREFIX}.fifteen:$(echo ${LOADAVG} | awk '{print $5}')|g"
+PROC_TOTAL="${PROC_PREFIX}.total:$(echo ${PROC} | grep Proc | awk '{print $2}')|g"
+PROC_RUN="${PROC_PREFIX}.running:$(echo ${PROC} | grep Proc | awk '{print $4}')|g"
+
+# Linux
+elif $(uname -a | grep Linux > /dev/null); then
+IFCONFIG=$(/sbin/ifconfig <%= @interface %>)
+NC_PARAMETERS="-u -w 1"
+NET_BYTE_IN="${NET_PREFIX}.in:$(echo ${IFCONFIG} | grep 'RX byt' | sed 's/.*RX bytes:\([0-9]\+\) .*/\1/')|g"
+NET_BYTE_OUT="${NET_PREFIX}.out:$(echo ${IFCONFIG} | grep 'RX byt' | sed 's/.*TX bytes:\([0-9]\+\) .*/\1/')|g"
+NET_BYTE_COL="${NET_PREFIX}.collisions:$(echo ${IFCONFIG} | grep 'colli' | sed 's/.*collisions:\([0-9]\+\) .*/\1/')|g"
+NET_BYTE_IN_ERROR="${NET_PREFIX}.in-error:$(echo ${IFCONFIG} | grep 'RX pa' | sed 's/.*errors:\([0-9]\+\) .*/\1/')|g"
+NET_BYTE_OUT_ERROR="${NET_PREFIX}.out-error:$(echo ${IFCONFIG} | grep 'TX pa' | sed 's/.*errors:\([0-9]\+\) .*/\1/')|g"
+DISK_USED="${DISK_PREFIX}.used:$(df -h | grep /$ | awk '{ NUM = $3; if ( $3 ~ /M/ ) { gsub(/M/, "", NUM); NUM = NUM / 1024; } else { gsub(/G(i)?/, "", NUM); } printf("%.2f", NUM); }')|g"
+DISK_FREE="${DISK_PREFIX}.free:$(df -h | grep /$ | awk '{ NUM = $4; if ( $4 ~ /M/ ) { gsub(/M/, "", NUM); NUM = NUM / 1024; } else { gsub(/G(i)?/, "", NUM); } printf("%.2f", NUM); }')|g"
+MEM_TOTAL="${MEM_PREFIX}.total:$(grep MemTotal /proc/meminfo | awk '{ printf("%.2f", $2/1024); }')|g"
+MEM_FREE="${MEM_PREFIX}.free:$(grep MemFree /proc/meminfo | awk '{ printf("%.2f", $2/1024); }')|g"
+SWAP_TOTAL="${SWAP_PREFIX}.total:$(grep SwapTotal /proc/meminfo | awk '{ printf("%.2f", $2/1024); }')|g"
+SWAP_FREE="${SWAP_PREFIX}.free:$(grep SwapFree /proc/meminfo | awk '{ printf("%.2f", $2/1024); }')|g"
+LOAD_ONE="${LOAD_PREFIX}.one:$(awk '{print $1}' /proc/loadavg)|g"
+LOAD_FIVE="${LOAD_PREFIX}.five:$(awk '{print $2}' /proc/loadavg)|g"
+LOAD_FIFTEEN="${LOAD_PREFIX}.fifteen:$(awk '{print $3}' /proc/loadavg)|g"
+PROC_TOTAL="${PROC_PREFIX}.total:$(awk '{print $4}' /proc/loadavg | sed 's/.*\///g')|g"
+PROC_RUN="${PROC_PREFIX}.running:$(awk '{print $4}' /proc/loadavg | sed 's/\/.*//g')|g"
+fi
+
+function send {
+	echo -n "$1" | ${NC} ${NC_PARAMETERS} ${HOST} ${PORT}
+}
+
+send ${NET_BYTE_IN}
+send ${NET_BYTE_OUT}
+send ${NET_BYTE_COL}
+send ${NET_BYTE_IN_ERROR}
+send ${NET_BYTE_OUT_ERROR}
+send ${DISK_USED}
+send ${DISK_FREE}
+send ${MEM_TOTAL}
+send ${MEM_FREE}
+send ${SWAP_TOTAL}
+send ${SWAP_FREE}
+send ${LOAD_ONE}
+send ${LOAD_FIVE}
+send ${LOAD_FIFTEEN}
+send ${PROC_TOTAL}
+send ${PROC_RUN}
